@@ -172,8 +172,6 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
     }
 
-
-
     @Override
     public void onCurrentLocationUpdate(MapView mapView, MapPoint currentLocation, float accuracyInMeters) {
         MapPoint.GeoCoordinate mapPointGeo = currentLocation.getMapPointGeoCoord();
