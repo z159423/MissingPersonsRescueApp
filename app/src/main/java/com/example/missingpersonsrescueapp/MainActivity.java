@@ -6,15 +6,19 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import android.Manifest;
+import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
+import android.graphics.Color;
 import android.location.Address;
 import android.location.Geocoder;
+import android.location.Location;
 import android.location.LocationManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.util.Base64;
 import android.util.Log;
@@ -28,13 +32,24 @@ import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.toolbox.Volley;
 
+import net.daum.mf.map.api.CameraUpdateFactory;
+import net.daum.mf.map.api.MapPOIItem;
 import net.daum.mf.map.api.MapPoint;
+import net.daum.mf.map.api.MapPointBounds;
+import net.daum.mf.map.api.MapPolyline;
 import net.daum.mf.map.api.MapReverseGeoCoder;
 import net.daum.mf.map.api.MapView;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
@@ -47,17 +62,28 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
     private static final int GPS_ENABLE_REQUEST_CODE = 2001;
     private static final int PERMISSIONS_REQUEST_CODE = 100;
+    private MapPoint MARKER_POINT = null;
     String[] REQUIRED_PERMISSIONS  = {Manifest.permission.ACCESS_FINE_LOCATION};
 
     private MapView mMapView;
 
     private Button rescueRequestBtn;
+    private Button deleteDroneMarkerBtn;
+    private Button currentMyLocationBtn;
+    private Button currentDroneLocationBtn;
 
-    private TextView Lat;
-    private TextView Lng;
-    private TextView RoadAddress;
+    private TextView Lat, Lng, RoadAddress;
+    private TextView droneLat, droneLng;
+    private TextView distance;
 
     String address;
+
+    private static String TAG = "phpexample";
+    private String mJsonString;
+
+    private String droneID, droneLocationLat, droneLocationLng;
+
+    private MapPOIItem droneMarker = new MapPOIItem();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -89,6 +115,38 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         Lng = findViewById(R.id.Lng);
         RoadAddress = findViewById(R.id.roadAddress);
 
+        deleteDroneMarkerBtn = findViewById(R.id.deleteDroneMarkerBtn);
+        currentMyLocationBtn = findViewById(R.id.currentMyLocationBtn);
+        currentDroneLocationBtn = findViewById(R.id.currentDroneLocationBtn);
+
+        droneLat = findViewById(R.id.droneLat);
+        droneLng = findViewById(R.id.droneLng);
+
+        distance = findViewById(R.id.distance);
+
+        deleteDroneMarkerBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                clearDroneMarker();
+
+                drawLowPoly();
+            }
+        });
+
+        currentMyLocationBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mMapView.setMapCenterPoint(MapPoint.mapPointWithGeoCoord(Double.valueOf((String) Lat.getText()) ,Double.valueOf((String) Lng.getText())), true);
+            }
+        });
+
+        currentDroneLocationBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                mMapView.setMapCenterPoint(MapPoint.mapPointWithGeoCoord(Double.valueOf(droneLocationLat) ,Double.valueOf(droneLocationLng)), true);
+            }
+        });
+
         rescueRequestBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -118,6 +176,10 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
                 queue.add(rescueRequest);
             }
         });
+
+        GetData task = new GetData();
+        task.execute( "http://tmdghks992.dothome.co.kr/getDroneLocation.php", "");
+
     }
 
     @Override
@@ -184,6 +246,9 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
         RoadAddress.setText(address);
         Log.i(LOG_TAG, String.format("MapView onCurrentLocationUpdate (%f,%f) accuracy (%f)", mapPointGeo.latitude, mapPointGeo.longitude, accuracyInMeters));
+
+        if(droneLocationLat != null || droneLocationLng != null)
+            drawLowPoly();
     }
 
     @Override
@@ -336,5 +401,198 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         strAdd = strAdd.substring(5);
 
         return strAdd;
+    }
+
+    private class GetData extends AsyncTask<String, Void, String> {
+
+        ProgressDialog progressDialog;
+        String errorString = null;
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+
+            progressDialog = ProgressDialog.show(MainActivity.this,
+                    "Please Wait", null, true, true);
+        }
+
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+
+            progressDialog.dismiss();
+            //mTextViewResult.setText(result);
+            Log.d(TAG, "response - " + result);
+
+            if (result == null){
+
+                //mTextViewResult.setText(errorString);
+            }
+            else {
+
+                mJsonString = result;
+                GetDroneLocation();
+            }
+        }
+
+
+        @Override
+        protected String doInBackground(String... params) {
+
+            String serverURL = params[0];
+            String postParameters = params[1];
+
+            try {
+
+                URL url = new URL(serverURL);
+                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+
+
+                httpURLConnection.setReadTimeout(5000);
+                httpURLConnection.setConnectTimeout(5000);
+                httpURLConnection.setRequestMethod("POST");
+                httpURLConnection.setDoInput(true);
+                httpURLConnection.connect();
+
+
+                OutputStream outputStream = httpURLConnection.getOutputStream();
+                outputStream.write(postParameters.getBytes("UTF-8"));
+                outputStream.flush();
+                outputStream.close();
+
+
+                int responseStatusCode = httpURLConnection.getResponseCode();
+                Log.d(TAG, "response code - " + responseStatusCode);
+
+                InputStream inputStream;
+                if(responseStatusCode == HttpURLConnection.HTTP_OK) {
+                    inputStream = httpURLConnection.getInputStream();
+                }
+                else{
+                    inputStream = httpURLConnection.getErrorStream();
+                }
+
+
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "UTF-8");
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+                StringBuilder sb = new StringBuilder();
+                String line;
+
+                while((line = bufferedReader.readLine()) != null){
+                    sb.append(line);
+                }
+
+                bufferedReader.close();
+
+                return sb.toString().trim();
+
+
+            } catch (Exception e) {
+
+                Log.d(TAG, "GetData : Error ", e);
+                errorString = e.toString();
+
+                return null;
+            }
+
+        }
+
+    }
+
+    private void GetDroneLocation()
+    {
+        String TAG_JSON="result";
+
+        try {
+            JSONObject jsonObject = new JSONObject(mJsonString);
+            JSONArray jsonArray = jsonObject.getJSONArray(TAG_JSON);
+
+
+            //Log.d("총 구조요청 개수 : ", String.valueOf(jsonArray.length()));
+
+            for(int i=0;i<jsonArray.length();i++){
+
+                JSONObject item = jsonArray.getJSONObject(i);
+
+                droneID = item.getString("ID");
+                droneLocationLat = item.getString("Lat");
+                droneLocationLng = item.getString("Lng");
+
+                Log.d("데이터베이스 불러오기","" + droneID + " " + droneLocationLat + " " + droneLocationLng);
+
+                addDroneMarker(mMapView ,MapPoint.mapPointWithGeoCoord(Double.parseDouble(droneLocationLat) ,Double.parseDouble(droneLocationLng)));
+
+                droneLat.setText(droneLocationLat);
+                droneLng.setText(droneLocationLng);
+            }
+
+        } catch (JSONException e) {
+            Log.d(TAG, "showResult : ", e);
+        }
+    }
+
+    private void addDroneMarker(MapView mapview, MapPoint markerpoint)
+    {
+        MapPOIItem marker = new MapPOIItem();
+        marker.setItemName("현재 드론 위치");
+        marker.setTag(0);
+        marker.setMapPoint(markerpoint);
+        marker.setMarkerType(MapPOIItem.MarkerType.BluePin); // 기본으로 제공하는 BluePin 마커 모양.
+        marker.setSelectedMarkerType(MapPOIItem.MarkerType.RedPin); // 마커를 클릭했을때, 기본으로 제공하는 RedPin 마커 모양.
+
+        droneMarker = marker;
+
+        mapview.addPOIItem(marker);
+    }
+
+    private void clearDroneMarker()
+    {
+        mMapView.removePOIItem(droneMarker);
+
+        GetData task = new GetData();
+        task.execute( "http://tmdghks992.dothome.co.kr/getDroneLocation.php", "");
+    }
+
+    private void drawLowPoly()
+    {
+        mMapView.removeAllPolylines();
+
+        MapPolyline polyline = new MapPolyline();
+        polyline.setTag(1000);
+        polyline.setLineColor(Color.argb(128, 255, 51, 0)); // Polyline 컬러 지정.
+
+        // Polyline 좌표 지정.
+        polyline.addPoint(MapPoint.mapPointWithGeoCoord(Double.valueOf((String) Lat.getText()) ,Double.valueOf((String) Lng.getText())));
+        polyline.addPoint(MapPoint.mapPointWithGeoCoord(Double.parseDouble(droneLocationLat),Double.parseDouble(droneLocationLng)));
+
+        // Polyline 지도에 올리기.
+        mMapView.addPolyline(polyline);
+
+        // 지도뷰의 중심좌표와 줌레벨을 Polyline이 모두 나오도록 조정.
+        MapPointBounds mapPointBounds = new MapPointBounds(polyline.getMapPoints());
+        int padding = 100; // px
+        mMapView.moveCamera(CameraUpdateFactory.newMapPointBounds(mapPointBounds, padding));
+
+        String dis = String.format("%.0f", getDistance(Double.valueOf((String) Lat.getText()) ,Double.valueOf((String) Lng.getText()),Double.parseDouble(droneLocationLat),Double.parseDouble(droneLocationLng)));
+
+        distance.setText(dis + " 미터");
+    }
+
+    public double getDistance(double lat1 , double lng1 , double lat2 , double lng2 ){
+        double distance;
+
+        Location locationA = new Location("point A");
+        locationA.setLatitude(lat1);
+        locationA.setLongitude(lng1);
+
+        Location locationB = new Location("point B");
+        locationB.setLatitude(lat2);
+        locationB.setLongitude(lng2);
+
+        distance = locationA.distanceTo(locationB);
+
+        return distance;
     }
 }
