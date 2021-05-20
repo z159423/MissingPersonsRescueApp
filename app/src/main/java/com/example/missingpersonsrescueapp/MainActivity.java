@@ -182,7 +182,7 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
         address = getCompleteAddressString(this, mapPointGeo.latitude, mapPointGeo.longitude);
 
-        RoadAddress.setText("도로명주소 : " + address);
+        RoadAddress.setText(address);
         Log.i(LOG_TAG, String.format("MapView onCurrentLocationUpdate (%f,%f) accuracy (%f)", mapPointGeo.latitude, mapPointGeo.longitude, accuracyInMeters));
     }
 
