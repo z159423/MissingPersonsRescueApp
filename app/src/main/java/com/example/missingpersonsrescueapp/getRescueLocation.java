@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class getRescueLocation extends StringRequest {
+    //=========================================사용 안하는 함수=====================================================
 
     final static private String URL = "http://tmdghks992.dothome.co.kr/getRescueLocation.php";
     private Map<String, String> map;

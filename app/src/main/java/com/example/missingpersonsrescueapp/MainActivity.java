@@ -124,6 +124,7 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
         distance = findViewById(R.id.distance);
 
+        //새로고침 버튼
         deleteDroneMarkerBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -147,6 +148,8 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
             }
         });
 
+
+        //=========================================구조요청 버튼 클릭시 서버로 구조요청을 보냄(현재 위도 경도를 전송)=====================================================
         rescueRequestBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -177,6 +180,7 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
             }
         });
 
+        //php주소를 입력하면 됨
         GetData task = new GetData();
         task.execute( "http://tmdghks992.dothome.co.kr/getDroneLocation.php", "");
 
@@ -234,6 +238,7 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
     }
 
+    //=========================================실시간으로 현재 좌표를 업데이트하는 하는 함수=====================================================
     @Override
     public void onCurrentLocationUpdate(MapView mapView, MapPoint currentLocation, float accuracyInMeters) {
         MapPoint.GeoCoordinate mapPointGeo = currentLocation.getMapPointGeoCoord();
@@ -266,6 +271,7 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
     }
 
+    //=========================================퍼미션 받는 함수=====================================================
     void checkRunTimePermission(){
 
         //런타임 퍼미션 처리
@@ -374,7 +380,10 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 //        Toast.makeText(LocationDemoActivity.this, "Reverse Geo-coding : " + result, Toast.LENGTH_SHORT).show();
     }
 
+
+    //========================================위도와 경도를 도로면 주소로 변환=====================================================
     public static String getCompleteAddressString(Context context, double LATITUDE, double LONGITUDE) {
+
         String strAdd = "";
         Geocoder geocoder = new Geocoder(context, Locale.getDefault());
         try {
@@ -501,8 +510,11 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
     }
 
+
+    //=========================================데이터베이스 서버에서 현재 드론 위지 가져오기=====================================================
     private void GetDroneLocation()
     {
+
         String TAG_JSON="result";
 
         try {
@@ -531,8 +543,13 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         } catch (JSONException e) {
             Log.d(TAG, "showResult : ", e);
         }
-    }
 
+    }
+    //===============================================================================================================================================
+
+
+
+    //=========================================카카오맵에 드론 마커 찍기=====================================================
     private void addDroneMarker(MapView mapview, MapPoint markerpoint)
     {
         MapPOIItem marker = new MapPOIItem();
@@ -545,16 +562,22 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         droneMarker = marker;
 
         mapview.addPOIItem(marker);
+
     }
 
+
+    //=========================================현재 찍혀있는 드론 마커 삭제=====================================================
     private void clearDroneMarker()
     {
         mMapView.removePOIItem(droneMarker);
 
+        //삭제후 바로 새로운 마커 생성
         GetData task = new GetData();
         task.execute( "http://tmdghks992.dothome.co.kr/getDroneLocation.php", "");
     }
 
+
+    //=========================================현재 좌표와 드론 좌표 사이를 선으로 그리기=====================================================
     private void drawLowPoly()
     {
         mMapView.removeAllPolylines();
@@ -580,6 +603,8 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         distance.setText(dis + " 미터");
     }
 
+
+    //=========================================거리계산 함수=====================================================
     public double getDistance(double lat1 , double lng1 , double lat2 , double lng2 ){
         double distance;
 

@@ -9,6 +9,8 @@ import java.util.Map;
 
 public class RescueRequest extends StringRequest {
 
+    //=========================================데이터베이스 서버에 구조요청 보내기(현재 좌표 보내기)=====================================================
+
     //서버 URL 설정(php 파일 연동)
     final static private String URL = "http://tmdghks992.dothome.co.kr/rescueRequest.php";
     private Map<String, String> map;
