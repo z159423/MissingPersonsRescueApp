@@ -20,6 +20,7 @@ import android.location.Location;
 import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.Base64;
 import android.util.Log;
 import android.view.View;
@@ -68,7 +69,7 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
     private MapView mMapView;
 
     private Button rescueRequestBtn;
-    private Button deleteDroneMarkerBtn;
+    private Button reFreshBtn;
     private Button currentMyLocationBtn;
     private Button currentDroneLocationBtn;
 
@@ -79,11 +80,17 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
     String address;
 
     private static String TAG = "phpexample";
-    private String mJsonString;
+    private String mJsonString, mJsonString2, mJsonString3;
 
     private String droneID, droneLocationLat, droneLocationLng;
 
     private MapPOIItem droneMarker = new MapPOIItem();
+
+    private String android_id;
+
+    public Context mContext;
+
+    boolean updateData = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,6 +98,14 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         setContentView(R.layout.activity_main);
 
         //getHashKey();
+
+        android_id = Settings.Secure.getString(
+
+                getApplicationContext().getContentResolver(), Settings.Secure.ANDROID_ID);
+
+        mContext = getApplicationContext();
+
+        Log.d("안드로이드 고유값 : ", android_id);
 
         mMapView = new MapView(this);
 
@@ -115,7 +130,7 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         Lng = findViewById(R.id.Lng);
         RoadAddress = findViewById(R.id.roadAddress);
 
-        deleteDroneMarkerBtn = findViewById(R.id.deleteDroneMarkerBtn);
+        reFreshBtn = findViewById(R.id.reFreshBtn);
         currentMyLocationBtn = findViewById(R.id.currentMyLocationBtn);
         currentDroneLocationBtn = findViewById(R.id.currentDroneLocationBtn);
 
@@ -125,7 +140,7 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         distance = findViewById(R.id.distance);
 
         //새로고침 버튼
-        deleteDroneMarkerBtn.setOnClickListener(new View.OnClickListener() {
+        reFreshBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 clearDroneMarker();
@@ -144,6 +159,12 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         currentDroneLocationBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if(droneLocationLat == null || droneLocationLng == null)
+                {
+                    Toast.makeText(getApplicationContext(), "운행중인 드론이 없습니다.", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
                 mMapView.setMapCenterPoint(MapPoint.mapPointWithGeoCoord(Double.valueOf(droneLocationLat) ,Double.valueOf(droneLocationLng)), true);
             }
         });
@@ -153,30 +174,10 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         rescueRequestBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                Response.Listener<String> responseListener = new Response.Listener<String>() {
-                    @Override
-                    public void onResponse(String response) {
-                        try {
-                            JSONObject jsonObject = new JSONObject(response);
-                            boolean success = jsonObject.getBoolean("success");
 
-                            if (success) {
-                                Toast.makeText(getApplicationContext(), "구조요청에 성공했습니다.", Toast.LENGTH_LONG).show();
+                GetRescueData task = new GetRescueData();
+                task.execute( "http://tmdghks992.dothome.co.kr/FindAllRescueReqeust.php", "");
 
-                            } else {
-                                Toast.makeText(getApplicationContext(), "구조요청에 실해했습니다.", Toast.LENGTH_SHORT).show();
-                                return;
-                            }
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                        }
-
-                    }
-                };
-                //서버를 이용해서 요청을 함
-                RescueRequest rescueRequest = new RescueRequest(Double.valueOf((String) Lat.getText()) ,Double.valueOf((String) Lng.getText()), (String)RoadAddress.getText(), responseListener);
-                RequestQueue queue = Volley.newRequestQueue(getApplicationContext());
-                queue.add(rescueRequest);
             }
         });
 
@@ -514,7 +515,6 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
     //=========================================데이터베이스 서버에서 현재 드론 위지 가져오기=====================================================
     private void GetDroneLocation()
     {
-
         String TAG_JSON="result";
 
         try {
@@ -523,6 +523,15 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
 
 
             //Log.d("총 구조요청 개수 : ", String.valueOf(jsonArray.length()));
+
+            if(jsonArray.length() == 0)
+            {
+                Log.d("드론 좌표가 DB에 없습니다. -> ", String.valueOf(jsonArray.length()));
+
+                droneID = null;
+                droneLocationLat = null;
+                droneLocationLng = null;
+            }
 
             for(int i=0;i<jsonArray.length();i++){
 
@@ -582,6 +591,13 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
     {
         mMapView.removeAllPolylines();
 
+        if(droneLocationLat == null || droneLocationLng == null)
+        {
+            Log.d("디버그", "드론 좌표로 없습니다.");
+            return;
+        }
+
+
         MapPolyline polyline = new MapPolyline();
         polyline.setTag(1000);
         polyline.setLineColor(Color.argb(128, 255, 51, 0)); // Polyline 컬러 지정.
@@ -594,9 +610,9 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         mMapView.addPolyline(polyline);
 
         // 지도뷰의 중심좌표와 줌레벨을 Polyline이 모두 나오도록 조정.
-        MapPointBounds mapPointBounds = new MapPointBounds(polyline.getMapPoints());
-        int padding = 100; // px
-        mMapView.moveCamera(CameraUpdateFactory.newMapPointBounds(mapPointBounds, padding));
+        //MapPointBounds mapPointBounds = new MapPointBounds(polyline.getMapPoints());
+        //int padding = 100; // px
+        //mMapView.moveCamera(CameraUpdateFactory.newMapPointBounds(mapPointBounds, padding));
 
         String dis = String.format("%.0f", getDistance(Double.valueOf((String) Lat.getText()) ,Double.valueOf((String) Lng.getText()),Double.parseDouble(droneLocationLat),Double.parseDouble(droneLocationLng)));
 
@@ -619,5 +635,325 @@ public class MainActivity extends AppCompatActivity implements MapView.MapViewEv
         distance = locationA.distanceTo(locationB);
 
         return distance;
+    }
+
+    private class GetRescueData extends AsyncTask<String, Void, String> {
+
+        ProgressDialog progressDialog;
+        String errorString = null;
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+
+            progressDialog = ProgressDialog.show(MainActivity.this,
+                    "Please Wait", null, true, true);
+        }
+
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+
+            progressDialog.dismiss();
+            //mTextViewResult.setText(result);
+            Log.d(TAG, "response - " + result);
+
+            if (result == null){
+
+                //mTextViewResult.setText(errorString);
+            }
+            else {
+
+                mJsonString2 = result;
+                GetRescueData();
+            }
+        }
+
+
+        @Override
+        protected String doInBackground(String... params) {
+
+            String serverURL = params[0];
+            String postParameters = params[1];
+
+            try {
+
+                URL url = new URL(serverURL);
+                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+
+
+                httpURLConnection.setReadTimeout(5000);
+                httpURLConnection.setConnectTimeout(5000);
+                httpURLConnection.setRequestMethod("POST");
+                httpURLConnection.setDoInput(true);
+                httpURLConnection.connect();
+
+
+                OutputStream outputStream = httpURLConnection.getOutputStream();
+                outputStream.write(postParameters.getBytes("UTF-8"));
+                outputStream.flush();
+                outputStream.close();
+
+
+                int responseStatusCode = httpURLConnection.getResponseCode();
+                Log.d(TAG, "response code - " + responseStatusCode);
+
+                InputStream inputStream;
+                if(responseStatusCode == HttpURLConnection.HTTP_OK) {
+                    inputStream = httpURLConnection.getInputStream();
+                }
+                else{
+                    inputStream = httpURLConnection.getErrorStream();
+                }
+
+
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "UTF-8");
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+                StringBuilder sb = new StringBuilder();
+                String line;
+
+                while((line = bufferedReader.readLine()) != null){
+                    sb.append(line);
+                }
+
+                bufferedReader.close();
+
+                return sb.toString().trim();
+
+
+            } catch (Exception e) {
+
+                Log.d(TAG, "GetData : Error ", e);
+                errorString = e.toString();
+
+                return null;
+            }
+
+        }
+
+    }
+
+    private void GetRescueData()
+    {
+        String TAG_JSON="result";
+
+        try {
+            JSONObject jsonObject = new JSONObject(mJsonString2);
+            JSONArray jsonArray = jsonObject.getJSONArray(TAG_JSON);
+
+            Log.d("구조요청 가져오기 : ", String.valueOf(jsonObject));
+            Log.d("총 구조요청 개수 : ", String.valueOf(jsonArray.length()));
+
+            //rescueDataArray = jsonArray;
+
+            for(int i=0;i<jsonArray.length();i++){
+                JSONObject item = null;
+
+                try {
+                    item = jsonArray.getJSONObject(i);
+
+                    String DBandroidID = item.getString("androidID");
+
+                    Log.d("androidID 비교 ", android_id + " == " + DBandroidID);
+                    Log.d("android_id", String.valueOf(android_id.equals(DBandroidID)));
+
+                    if(android_id.equals(DBandroidID))
+                    {
+                        updateData = true;
+
+                        UpdateRescueData task = new UpdateRescueData();
+                        task.execute( "http://tmdghks992.dothome.co.kr/updateRescueRequest.php", "");
+                        return;
+                    }
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            Log.d("updateData ", String.valueOf(updateData));
+
+            if(updateData == false)
+            {
+                Response.Listener<String> responseListener = new Response.Listener<String>() {
+                    @Override
+                    public void onResponse(String response) {
+                        try {
+                            JSONObject jsonObject = new JSONObject(response);
+                            boolean success = jsonObject.getBoolean("success");
+
+                            if (success) {
+                                Toast.makeText(getApplicationContext(), "구조요청에 성공했습니다.", Toast.LENGTH_LONG).show();
+
+                            } else {
+                                Toast.makeText(getApplicationContext(), "구조요청에 실해했습니다.", Toast.LENGTH_SHORT).show();
+                                return;
+                            }
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+
+                    }
+                };
+                //서버를 이용해서 요청을 함
+                RescueRequest rescueRequest = null;
+                try {
+                    rescueRequest = new RescueRequest(Double.valueOf((String) Lat.getText()) ,Double.valueOf((String) Lng.getText()), (String)RoadAddress.getText(), android_id, responseListener);
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+
+                RequestQueue queue = Volley.newRequestQueue(getApplicationContext());
+                queue.add(rescueRequest);
+            }
+
+        } catch (JSONException e) {
+            Log.d(TAG, "showResult : ", e);
+        }
+
+    }
+
+    private class UpdateRescueData extends AsyncTask<String, Void, String> {
+
+        ProgressDialog progressDialog;
+        String errorString = null;
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+
+            progressDialog = ProgressDialog.show(MainActivity.this,
+                    "Please Wait", null, true, true);
+        }
+
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+
+            progressDialog.dismiss();
+            //mTextViewResult.setText(result);
+            Log.d(TAG, "response - " + result);
+
+            if (result == null){
+
+                //mTextViewResult.setText(errorString);
+            }
+            else {
+
+                mJsonString3 = result;
+                UpdateRescueData();
+            }
+        }
+
+
+        @Override
+        protected String doInBackground(String... params) {
+
+            String serverURL = params[0];
+            String postParameters = params[1];
+
+            try {
+
+                URL url = new URL(serverURL);
+                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+
+
+                httpURLConnection.setReadTimeout(5000);
+                httpURLConnection.setConnectTimeout(5000);
+                httpURLConnection.setRequestMethod("POST");
+                httpURLConnection.setDoInput(true);
+                httpURLConnection.connect();
+
+
+                OutputStream outputStream = httpURLConnection.getOutputStream();
+                outputStream.write(postParameters.getBytes("UTF-8"));
+                outputStream.flush();
+                outputStream.close();
+
+
+                int responseStatusCode = httpURLConnection.getResponseCode();
+                Log.d(TAG, "response code - " + responseStatusCode);
+
+                InputStream inputStream;
+                if(responseStatusCode == HttpURLConnection.HTTP_OK) {
+                    inputStream = httpURLConnection.getInputStream();
+                }
+                else{
+                    inputStream = httpURLConnection.getErrorStream();
+                }
+
+
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, "UTF-8");
+                BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+                StringBuilder sb = new StringBuilder();
+                String line;
+
+                while((line = bufferedReader.readLine()) != null){
+                    sb.append(line);
+                }
+
+                bufferedReader.close();
+
+                return sb.toString().trim();
+
+
+            } catch (Exception e) {
+
+                Log.d(TAG, "GetData : Error ", e);
+                errorString = e.toString();
+
+                return null;
+            }
+
+        }
+
+    }
+
+    private void UpdateRescueData()
+    {
+        updateData = true;
+
+        Response.Listener<String> responseListener = new Response.Listener<String>() {
+            @Override
+            public void onResponse(String response) {
+                try {
+                    Log.d("response ", response);
+
+                    JSONObject jsonObject = new JSONObject(response);
+                    //Log.d("test", mJsonString2);
+                    boolean success = jsonObject.getBoolean("success");
+
+                    if (success) {
+                        Toast.makeText(getApplicationContext(), "구조요청을 업데이트하였습니다.", Toast.LENGTH_LONG).show();
+
+                    } else {
+                        Toast.makeText(getApplicationContext(), "구조요청에 실패했습니다.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                }
+
+            }
+        };
+        //서버를 이용해서 요청을 함
+        UpdateRescueReqeust updateRescueRequest = null;
+        try {
+            if (Lat.getText() == null || Lng.getText() == null) {
+                Toast.makeText(getApplicationContext(), "현재 좌표를 불러올 수 없습니다.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            updateRescueRequest = new UpdateRescueReqeust(Double.valueOf((String) Lat.getText()), Double.valueOf((String) Lng.getText()), (String) RoadAddress.getText(), android_id, responseListener);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        RequestQueue queue = Volley.newRequestQueue(getApplicationContext());
+        queue.add(updateRescueRequest);
+        return;
+
     }
 }
